@@ -1,5 +1,9 @@
 import socket
 import os
+from Crypto.Cipher import AES
+from Crypto.Hash import HMAC, SHA256
+
+KEY = b'0123456789abcdef'
 
 # Remote server address and port used when sending files
 SERVER_IP = input("Enter server IP: ")
@@ -46,7 +50,12 @@ def send_file(filename):
             if not chunk:
                 break
 
-            packet = seq.to_bytes(4, "big") + chunk
+            cipher = AES.new(KEY, AES.MODE_CTR, nonce=seq.to_bytes(16, 'big'))
+            encrypted = cipher.encrypt(chunk)
+            hmac_obj = HMAC.new(KEY, digestmod=SHA256)
+            hmac_obj.update(encrypted)
+            hmac = hmac_obj.digest()
+            packet = seq.to_bytes(4, "big") + encrypted + hmac
 
             while True:
                 send_sock.sendto(packet, (SERVER_IP, SERVER_PORT))
@@ -93,7 +102,15 @@ def receive_file():
                 break
 
             seq = int.from_bytes(data[:4], "big")
-            chunk = data[4:]
+            encrypted = data[4:-32]
+            hmac_received = data[-32:]
+            hmac_obj = HMAC.new(KEY, digestmod=SHA256)
+            hmac_obj.update(encrypted)
+            if hmac_obj.digest() != hmac_received:
+                print("HMAC mismatch, ignoring packet")
+                continue
+            cipher = AES.new(KEY, AES.MODE_CTR, nonce=seq.to_bytes(16, 'big'))
+            chunk = cipher.decrypt(encrypted)
 
             if seq == expected_seq:
                 f.write(chunk)
