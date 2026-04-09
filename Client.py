@@ -1,3 +1,4 @@
+# this is the client code
 import socket
 import os
 
